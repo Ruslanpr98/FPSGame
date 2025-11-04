@@ -8,10 +8,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/DamageType.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/Controller.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
 
 AShooterProjectile::AShooterProjectile()
 {
@@ -79,6 +79,7 @@ void AShooterProjectile::NotifyHit(class UPrimitiveComponent* MyComp, AActor* Ot
 		// single hit projectile. Process the collided actor
 		ProcessHit(Other, OtherComp, Hit.ImpactPoint, -Hit.ImpactNormal);
 
+	    DestructObject(OtherComp, HitLocation, Hit);
 	}
 
 	// pass control to BP for any extra effects
@@ -135,7 +136,6 @@ void AShooterProjectile::ExplosionCheck(const FVector& ExplosionCenter)
 			// push and/or damage the overlapped actor
 			ProcessHit(CurrentOverlap.GetActor(), CurrentOverlap.GetComponent(), GetActorLocation(), ExplosionDir.GetSafeNormal());
 		}
-			
 	}
 }
 
@@ -158,6 +158,25 @@ void AShooterProjectile::ProcessHit(AActor* HitActor, UPrimitiveComponent* HitCo
 		// give some physics impulse to the object
 		HitComp->AddImpulseAtLocation(HitDirection * PhysicsForce, HitLocation);
 	}
+}
+
+void AShooterProjectile::DestructObject(UPrimitiveComponent *HitComp, const FVector &HitLocation, const FHitResult &Hit) {
+    const auto DestructableComponent = HitComp->GetCollisionObjectType();
+    
+    if(!HitComp || DestructableComponent != ECC_Destructible) return;
+
+    UGeometryCollectionComponent* GCComp = Cast<UGeometryCollectionComponent>(HitComp);
+
+    const int32 ItemIndex = Hit.Item;
+    float EffectiveRadius = 100.0f;
+    int32 PropagationDepth = 2;
+    float PropagationFactor = 1.f;
+    float StrainAmount = 1000000.0f;
+    
+    GCComp->ApplyExternalStrain(ItemIndex, HitLocation, EffectiveRadius, PropagationDepth, PropagationFactor, StrainAmount);
+
+    FVector LinearVelocity = GetActorForwardVector() * 300.0f;
+    GCComp->ApplyLinearVelocity(ItemIndex, LinearVelocity);
 }
 
 void AShooterProjectile::OnDeferredDestruction()
