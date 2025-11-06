@@ -13,6 +13,8 @@
 #include "TimerManager.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 
+DEFINE_LOG_CATEGORY_STATIC(ShooterProjectileLog, All, All);
+
 AShooterProjectile::AShooterProjectile()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -78,10 +80,10 @@ void AShooterProjectile::NotifyHit(class UPrimitiveComponent* MyComp, AActor* Ot
 
 		// single hit projectile. Process the collided actor
 		ProcessHit(Other, OtherComp, Hit.ImpactPoint, -Hit.ImpactNormal);
-
-	    DestructObject(OtherComp, HitLocation, Hit);
 	}
 
+    DestructObject(OtherComp, HitLocation, Hit);
+    
 	// pass control to BP for any extra effects
 	BP_OnProjectileHit(Hit);
 
@@ -117,26 +119,28 @@ void AShooterProjectile::ExplosionCheck(const FVector& ExplosionCenter)
 		QueryParams.AddIgnoredActor(GetInstigator());
 	}
 
-	GetWorld()->OverlapMultiByObjectType(Overlaps, ExplosionCenter, FQuat::Identity, ObjectParams, OverlapShape, QueryParams);
+	bool bHasOverlaps = GetWorld()->OverlapMultiByObjectType(Overlaps, ExplosionCenter, FQuat::Identity, ObjectParams, OverlapShape, QueryParams);
 
 	TArray<AActor*> DamagedActors;
 
-	// process the overlap results
-	for (const FOverlapResult& CurrentOverlap : Overlaps)
-	{
-		// overlaps may return the same actor multiple times per each component overlapped
-		// ensure we only damage each actor once by adding it to a damaged list
-		if (DamagedActors.Find(CurrentOverlap.GetActor()) == INDEX_NONE)
-		{
-			DamagedActors.Add(CurrentOverlap.GetActor());
+    if (bHasOverlaps) {
+        // process the overlap results
+        for (const FOverlapResult& CurrentOverlap : Overlaps)
+        {
+            // overlaps may return the same actor multiple times per each component overlapped
+            // ensure we only damage each actor once by adding it to a damaged list
+            if (DamagedActors.Find(CurrentOverlap.GetActor()) == INDEX_NONE)
+            {
+                DamagedActors.Add(CurrentOverlap.GetActor());
 
-			// apply physics force away from the explosion
-			const FVector& ExplosionDir = CurrentOverlap.GetActor()->GetActorLocation() - GetActorLocation();
+                // apply physics force away from the explosion
+                const FVector& ExplosionDir = CurrentOverlap.GetActor()->GetActorLocation() - GetActorLocation();
 
-			// push and/or damage the overlapped actor
-			ProcessHit(CurrentOverlap.GetActor(), CurrentOverlap.GetComponent(), GetActorLocation(), ExplosionDir.GetSafeNormal());
-		}
-	}
+                // push and/or damage the overlapped actor
+                ProcessHit(CurrentOverlap.GetActor(), CurrentOverlap.GetComponent(), GetActorLocation(), ExplosionDir.GetSafeNormal());
+            }
+        }
+    }
 }
 
 void AShooterProjectile::ProcessHit(AActor* HitActor, UPrimitiveComponent* HitComp, const FVector& HitLocation, const FVector& HitDirection)
@@ -166,18 +170,18 @@ void AShooterProjectile::DestructObject(UPrimitiveComponent *HitComp, const FVec
     if(!HitComp || DestructableComponent != ECC_Destructible) return;
 
     UGeometryCollectionComponent* GCComp = Cast<UGeometryCollectionComponent>(HitComp);
-
+    
     const int32 ItemIndex = Hit.Item;
     float EffectiveRadius = 100.0f;
     int32 PropagationDepth = 2;
     float PropagationFactor = 1.f;
     float StrainAmount = 1000000.0f;
+    FVector LinearVelocity = GetActorForwardVector() * 500.0f;
     
     GCComp->ApplyExternalStrain(ItemIndex, HitLocation, EffectiveRadius, PropagationDepth, PropagationFactor, StrainAmount);
-
-    FVector LinearVelocity = GetActorForwardVector() * 300.0f;
     GCComp->ApplyLinearVelocity(ItemIndex, LinearVelocity);
 }
+    
 
 void AShooterProjectile::OnDeferredDestruction()
 {
